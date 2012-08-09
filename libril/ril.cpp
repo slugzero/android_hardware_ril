@@ -2247,7 +2247,7 @@ static int responseSimStatus(Parcel &p, void *response, size_t responselen) {
         return RIL_ERRNO_INVALID_RESPONSE;
     }
 
-    if (responselen == sizeof (RIL_CardStatus_v6)) {
+    if (responselen == sizeof (RIL_CardStatus_v6) || RIL_VERSION >= 4 ) {
         RIL_CardStatus_v6 *p_cur = ((RIL_CardStatus_v6 *) response);
 
         p.writeInt32(p_cur->card_state);
@@ -2257,7 +2257,7 @@ static int responseSimStatus(Parcel &p, void *response, size_t responselen) {
         p.writeInt32(p_cur->ims_subscription_app_index);
 
         sendSimStatusAppInfo(p, p_cur->num_applications, p_cur->applications);
-    } else if (responselen == sizeof (RIL_CardStatus_v5) || responselen == 4) {
+    } else if (responselen == sizeof (RIL_CardStatus_v5) || RIL_VERSION < 4) {
         RIL_CardStatus_v5 *p_cur = ((RIL_CardStatus_v5 *) response);
 
         p.writeInt32(p_cur->card_state);
