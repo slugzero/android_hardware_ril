@@ -1975,9 +1975,39 @@ static void rilEventAddWakeup(struct ril_event *ev) {
     triggerEvLoop();
 }
 
-static int responseSimStatus(Parcel &p, void *response, size_t responselen) {
+static void sendSimStatusAppInfo(Parcel &p, int num_apps, RIL_AppStatus appStatus[]) {
     int i;
 
+    p.writeInt32(num_apps);
+
+    startResponse;
+    for (i = 0; i < num_apps; i++) {
+        p.writeInt32(appStatus[i].app_type);
+        p.writeInt32(appStatus[i].app_state);
+        p.writeInt32(appStatus[i].perso_substate);
+        writeStringToParcel(p, (const char*)(appStatus[i].aid_ptr));
+        writeStringToParcel(p, (const char*)
+                                      (appStatus[i].app_label_ptr));
+        p.writeInt32(appStatus[i].pin1_replaced);
+        p.writeInt32(appStatus[i].pin1);
+        p.writeInt32(appStatus[i].pin2);
+        appendPrintBuf("%s[app_type=%d,app_state=%d,perso_substate=%d,\
+                aid_ptr=%s,app_label_ptr=%s,pin1_replaced=%d,pin1=%d,pin2=%d],",
+                printBuf,
+                appStatus[i].app_type,
+                appStatus[i].app_state,
+                appStatus[i].perso_substate,
+                appStatus[i].aid_ptr,
+                appStatus[i].app_label_ptr,
+                appStatus[i].pin1_replaced,
+                appStatus[i].pin1,
+                appStatus[i].pin2);
+    }
+    closeResponse;
+
+}
+
+static int responseSimStatus(Parcel &p, void *response, size_t responselen) {
     if (response == NULL && responselen != 0) {
         LOGE("invalid response: NULL");
         return RIL_ERRNO_INVALID_RESPONSE;
@@ -1989,38 +2019,23 @@ static int responseSimStatus(Parcel &p, void *response, size_t responselen) {
         return RIL_ERRNO_INVALID_RESPONSE;
     }
 
-    RIL_CardStatus *p_cur = ((RIL_CardStatus *) response);
+    if (s_callbacks.version == 4) {
+        RIL_CardStatus_MotoV4 *p_cur = ((RIL_CardStatus_MotoV4 *) response);
 
-    p.writeInt32(p_cur->card_state);
-    p.writeInt32(p_cur->universal_pin_state);
-    p.writeInt32(p_cur->gsm_umts_subscription_app_index);
-    p.writeInt32(p_cur->cdma_subscription_app_index);
-    p.writeInt32(p_cur->num_applications);
+        p.writeInt32(p_cur->card_state);
+        p.writeInt32(p_cur->universal_pin_state);
+        p.writeInt32(p_cur->gsm_umts_subscription_app_index);
+        p.writeInt32(p_cur->cdma_subscription_app_index);
+        sendSimStatusAppInfo(p, p_cur->num_applications, p_cur->applications);
+    } else {
+        RIL_CardStatus *p_cur = ((RIL_CardStatus *) response);
 
-    startResponse;
-    for (i = 0; i < p_cur->num_applications; i++) {
-        p.writeInt32(p_cur->applications[i].app_type);
-        p.writeInt32(p_cur->applications[i].app_state);
-        p.writeInt32(p_cur->applications[i].perso_substate);
-        writeStringToParcel(p, (const char*)(p_cur->applications[i].aid_ptr));
-        writeStringToParcel(p, (const char*)
-                                      (p_cur->applications[i].app_label_ptr));
-        p.writeInt32(p_cur->applications[i].pin1_replaced);
-        p.writeInt32(p_cur->applications[i].pin1);
-        p.writeInt32(p_cur->applications[i].pin2);
-        appendPrintBuf("%s[app_type=%d,app_state=%d,perso_substate=%d,\
-                aid_ptr=%s,app_label_ptr=%s,pin1_replaced=%d,pin1=%d,pin2=%d],",
-                printBuf,
-                p_cur->applications[i].app_type,
-                p_cur->applications[i].app_state,
-                p_cur->applications[i].perso_substate,
-                p_cur->applications[i].aid_ptr,
-                p_cur->applications[i].app_label_ptr,
-                p_cur->applications[i].pin1_replaced,
-                p_cur->applications[i].pin1,
-                p_cur->applications[i].pin2);
+        p.writeInt32(p_cur->card_state);
+        p.writeInt32(p_cur->universal_pin_state);
+        p.writeInt32(p_cur->gsm_umts_subscription_app_index);
+        p.writeInt32(p_cur->cdma_subscription_app_index);
+        sendSimStatusAppInfo(p, p_cur->num_applications, p_cur->applications);
     }
-    closeResponse;
 
     return 0;
 }
@@ -2553,16 +2568,21 @@ RIL_register (const RIL_RadioFunctions *callbacks) {
     int ret;
     int flags;
 
-    if (callbacks == NULL || ((callbacks->version != RIL_VERSION)
-                && (callbacks->version != 2))) { // Remove when partners upgrade to version 3
-        LOGE(
-            "RIL_register: RIL_RadioFunctions * null or invalid version"
-            " (expected %d)", RIL_VERSION);
+    if (callbacks == NULL) {
+        LOGE("RIL_register: RIL_RadioFunctions * null");
         return;
     }
-    if (callbacks->version < 3) {
-        LOGE ("RIL_register: upgrade RIL to version 3 current version=%d", callbacks->version);
+    if (callbacks->version < RIL_VERSION_MIN) {
+        LOGE("RIL_register: version %d is too old, min version is %d",
+             callbacks->version, RIL_VERSION_MIN);
+        return;
     }
+    if (callbacks->version > RIL_VERSION) {
+        LOGE("RIL_register: version %d is too new, max version is %d",
+             callbacks->version, RIL_VERSION);
+        return;
+    }
+    LOGE("RIL_register: RIL version %d", callbacks->version);
 
     if (s_registerCalled > 0) {
         LOGE("RIL_register has been called more than once. "

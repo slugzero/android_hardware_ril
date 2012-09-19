@@ -40,7 +40,8 @@
 extern "C" {
 #endif
 
-#define RIL_VERSION 3
+#define RIL_VERSION 4
+#define RIL_VERSION_MIN 2
 
 #define CDMA_ALPHA_INFO_BUFFER_LENGTH 64
 #define CDMA_NUMBER_INFO_BUFFER_LENGTH 81
@@ -411,6 +412,17 @@ typedef struct
   int           num_applications;                /* value <= RIL_CARD_MAX_APPS */
   RIL_AppStatus applications[RIL_CARD_MAX_APPS];
 } RIL_CardStatus;
+
+typedef struct
+{
+  RIL_CardState card_state;
+  RIL_PinState  universal_pin_state;             /* applicable to USIM and CSIM: RIL_PINSTATE_xxx */
+  int           gsm_umts_subscription_app_index; /* value < RIL_CARD_MAX_APPS, -1 if none */
+  int           cdma_subscription_app_index;     /* value < RIL_CARD_MAX_APPS, -1 if none */
+  int           ims_subscription_app_index;      /* value < RIL_CARD_MAX_APPS, -1 if none */
+  int           num_applications;                /* value <= RIL_CARD_MAX_APPS */
+  RIL_AppStatus applications[RIL_CARD_MAX_APPS];
+} RIL_CardStatus_MotoV4;
 
 /* The result of a SIM refresh, returned in data[0] of RIL_UNSOL_SIM_REFRESH */
 typedef enum {
