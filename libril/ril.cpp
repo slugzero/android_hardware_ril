@@ -2411,7 +2411,7 @@ static int responseSimStatus(Parcel &p, void *response, size_t responselen) {
         p.writeInt32(p_cur->ims_subscription_app_index);
 
         sendSimStatusAppInfo(p, p_cur->num_applications, p_cur->applications);
-    } else if (responselen == sizeof (RIL_CardStatus_v5)) {
+    } else if (responselen == sizeof (RIL_CardStatus_v5) || responselen == 4) {
         RIL_CardStatus_v5 *p_cur = ((RIL_CardStatus_v5 *) response);
 
         p.writeInt32(p_cur->card_state);
