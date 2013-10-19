@@ -193,6 +193,7 @@ static size_t s_lastNITZTimeDataSize;
 
 /*******************************************************************/
 
+static void dispatchNothing (Parcel& p, RequestInfo *pRI);
 static void dispatchVoid (Parcel& p, RequestInfo *pRI);
 static void dispatchString (Parcel& p, RequestInfo *pRI);
 static void dispatchStrings (Parcel& p, RequestInfo *pRI);
@@ -401,6 +402,12 @@ static void
 invalidCommandBlock (RequestInfo *pRI) {
     RLOGE("invalid command block for token %d request %s",
                 pRI->token, requestToString(pRI->pCI->requestNumber));
+}
+
+/** Don't call anything */
+static void dispatchNothing(Parcel& p, RequestInfo *pRI) {
+   RLOGE("COMMAND %s NOT SUPPORTED BY RIL!",requestToString(pRI->pCI->requestNumber));
+   RIL_onRequestComplete(pRI, RIL_E_GENERIC_FAILURE, NULL, 0);
 }
 
 /** Callee expects NULL */
@@ -1238,7 +1245,7 @@ static void dispatchDataCall(Parcel& p, RequestInfo *pRI) {
     int pos = p.dataPosition();
 
     int numParams = p.readInt32();
-    if (s_callbacks.version < 4 && numParams > numParamsRilV3) {
+    {
       Parcel p2;
       p2.appendFrom(&p, 0, pos);
       p2.writeInt32(numParamsRilV3);
@@ -1247,9 +1254,6 @@ static void dispatchDataCall(Parcel& p, RequestInfo *pRI) {
       }
       p2.setDataPosition(pos);
       dispatchStrings(p2, pRI);
-    } else {
-      p.setDataPosition(pos);
-      dispatchStrings(p, pRI);
     }
 }
 
@@ -1263,14 +1267,7 @@ static void dispatchVoiceRadioTech(Parcel& p, RequestInfo *pRI) {
         RIL_onRequestComplete(pRI, RIL_E_RADIO_NOT_AVAILABLE, NULL, 0);
     }
 
-    // RILs that support RADIO_STATE_ON should support this request.
-    if (RADIO_STATE_ON == state) {
-        dispatchVoid(p, pRI);
-        return;
-    }
-
-    // For Older RILs, that do not support RADIO_STATE_ON, assume that they
-    // will not support this new request either and decode Voice Radio Technology
+    // Decode Voice Radio Technology
     // from Radio State
     voiceRadioTech = decodeVoiceRadioTechnology(state);
 
@@ -1290,14 +1287,7 @@ static void dispatchCdmaSubscriptionSource(Parcel& p, RequestInfo *pRI) {
         RIL_onRequestComplete(pRI, RIL_E_RADIO_NOT_AVAILABLE, NULL, 0);
     }
 
-    // RILs that support RADIO_STATE_ON should support this request.
-    if (RADIO_STATE_ON == state) {
-        dispatchVoid(p, pRI);
-        return;
-    }
-
-    // For Older RILs, that do not support RADIO_STATE_ON, assume that they
-    // will not support this new request either and decode CDMA Subscription Source
+    // Decode CDMA Subscription Source
     // from Radio State
     cdmaSubscriptionSource = decodeCdmaSubscriptionSource(state);
 
@@ -1640,55 +1630,7 @@ static int responseDataCallList(Parcel &p, void *response, size_t responselen)
 {
     // Write version
     p.writeInt32(s_callbacks.version);
-
-    if (s_callbacks.version < 5) {
-        return responseDataCallListV4(p, response, responselen);
-    } else {
-        if (response == NULL && responselen != 0) {
-            RLOGE("invalid response: NULL");
-            return RIL_ERRNO_INVALID_RESPONSE;
-        }
-
-        if (responselen % sizeof(RIL_Data_Call_Response_v6) != 0) {
-            RLOGE("invalid response length %d expected multiple of %d",
-                    (int)responselen, (int)sizeof(RIL_Data_Call_Response_v6));
-            return RIL_ERRNO_INVALID_RESPONSE;
-        }
-
-        int num = responselen / sizeof(RIL_Data_Call_Response_v6);
-        p.writeInt32(num);
-
-        RIL_Data_Call_Response_v6 *p_cur = (RIL_Data_Call_Response_v6 *) response;
-        startResponse;
-        int i;
-        for (i = 0; i < num; i++) {
-            p.writeInt32((int)p_cur[i].status);
-#ifndef HCRADIO
-            p.writeInt32(p_cur[i].suggestedRetryTime);
-#endif
-            p.writeInt32(p_cur[i].cid);
-            p.writeInt32(p_cur[i].active);
-            writeStringToParcel(p, p_cur[i].type);
-            writeStringToParcel(p, p_cur[i].ifname);
-            writeStringToParcel(p, p_cur[i].addresses);
-            writeStringToParcel(p, p_cur[i].dnses);
-            writeStringToParcel(p, p_cur[i].gateways);
-            appendPrintBuf("%s[status=%d,retry=%d,cid=%d,%s,%s,%s,%s,%s,%s],", printBuf,
-                p_cur[i].status,
-                p_cur[i].suggestedRetryTime,
-                p_cur[i].cid,
-                (p_cur[i].active==0)?"down":"up",
-                (char*)p_cur[i].type,
-                (char*)p_cur[i].ifname,
-                (char*)p_cur[i].addresses,
-                (char*)p_cur[i].dnses,
-                (char*)p_cur[i].gateways);
-        }
-        removeLastChar;
-        closeResponse;
-    }
-
-    return 0;
+    return responseDataCallListV4(p, response, responselen);
 }
 
 static int responseSetupDataCall(Parcel &p, void *response, size_t responselen)
@@ -2146,29 +2088,23 @@ static int responseCdmaCallWaiting(Parcel &p, void *response,
         return RIL_ERRNO_INVALID_RESPONSE;
     }
 
-    if (responselen < sizeof(RIL_CDMA_CallWaiting_v6)) {
-        RLOGW("Upgrade to ril version %d\n", RIL_VERSION);
-    }
-
-    RIL_CDMA_CallWaiting_v6 *p_cur = ((RIL_CDMA_CallWaiting_v6 *) response);
+    RLOGW("Upgrade to ril version %d\n", RIL_VERSION);
+    
+    RIL_CDMA_CallWaiting_v5 *p_cur = ((RIL_CDMA_CallWaiting_v5 *) response);
 
     writeStringToParcel(p, p_cur->number);
     p.writeInt32(p_cur->numberPresentation);
     writeStringToParcel(p, p_cur->name);
     marshallSignalInfoRecord(p, p_cur->signalInfoRecord);
 
-    if (responselen >= sizeof(RIL_CDMA_CallWaiting_v6)) {
-        p.writeInt32(p_cur->number_type);
-        p.writeInt32(p_cur->number_plan);
-    } else {
-        p.writeInt32(0);
-        p.writeInt32(0);
-    }
+    p.writeInt32(0);
+    p.writeInt32(0);
+    
 
     startResponse;
     appendPrintBuf("%snumber=%s,numberPresentation=%d, name=%s,\
             signalInfoRecord[isPresent=%d,signalType=%d,alertPitch=%d\
-            signal=%d,number_type=%d,number_plan=%d]",
+            signal=%d]",
             printBuf,
             p_cur->number,
             p_cur->numberPresentation,
@@ -2176,9 +2112,7 @@ static int responseCdmaCallWaiting(Parcel &p, void *response,
             p_cur->signalInfoRecord.isPresent,
             p_cur->signalInfoRecord.signalType,
             p_cur->signalInfoRecord.alertPitch,
-            p_cur->signalInfoRecord.signal,
-            p_cur->number_type,
-            p_cur->number_plan);
+            p_cur->signalInfoRecord.signal);
     closeResponse;
 
     return 0;
@@ -2191,18 +2125,7 @@ static int responseSimRefresh(Parcel &p, void *response, size_t responselen) {
     }
 
     startResponse;
-    if (s_callbacks.version == 7) {
-        RIL_SimRefreshResponse_v7 *p_cur = ((RIL_SimRefreshResponse_v7 *) response);
-        p.writeInt32(p_cur->result);
-        p.writeInt32(p_cur->ef_id);
-        writeStringToParcel(p, p_cur->aid);
-
-        appendPrintBuf("%sresult=%d, ef_id=%d, aid=%s",
-                printBuf,
-                p_cur->result,
-                p_cur->ef_id,
-                p_cur->aid);
-    } else {
+    {
         int *p_cur = ((int *) response);
         p.writeInt32(p_cur[0]);
         p.writeInt32(p_cur[1]);
@@ -2401,7 +2324,7 @@ static int responseSimStatus(Parcel &p, void *response, size_t responselen) {
         return RIL_ERRNO_INVALID_RESPONSE;
     }
 
-    if (responselen == sizeof (RIL_CardStatus_v6) || RIL_VERSION >= 4 ) {
+    {
         RIL_CardStatus_v6 *p_cur = ((RIL_CardStatus_v6 *) response);
 
         p.writeInt32(p_cur->card_state);
@@ -2411,19 +2334,6 @@ static int responseSimStatus(Parcel &p, void *response, size_t responselen) {
         p.writeInt32(p_cur->ims_subscription_app_index);
 
         sendSimStatusAppInfo(p, p_cur->num_applications, p_cur->applications);
-    } else if (responselen == sizeof (RIL_CardStatus_v5) || RIL_VERSION < 4) {
-        RIL_CardStatus_v5 *p_cur = ((RIL_CardStatus_v5 *) response);
-
-        p.writeInt32(p_cur->card_state);
-        p.writeInt32(p_cur->universal_pin_state);
-        p.writeInt32(p_cur->gsm_umts_subscription_app_index);
-        p.writeInt32(p_cur->cdma_subscription_app_index);
-        p.writeInt32(-1);
-
-        sendSimStatusAppInfo(p, p_cur->num_applications, p_cur->applications);
-    } else {
-        RLOGE("responseSimStatus: A RilCardStatus_v6 or _v5 expected\n");
-        return RIL_ERRNO_INVALID_RESPONSE;
     }
 
     return 0;
